@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ProCam</string>
+    <string name="tab_photo">PHOTO</string>
+    <string name="tab_video">VIDEO</string>
+    <string name="permission_needed">Camera permission is required. Tap here to open settings.</string>
+    <string name="fx_unavailable">No special modes (HDR / Night / Portrait) on this camera</string>
+    <string name="no_other_camera">No other camera available</string>
+    <string name="camera_error">Could not start the camera</string>
+    <string name="photo_failed">Saving photo failed: %1$s</string>
+    <string name="video_failed">Recording failed (code %1$d)</string>
+    <string name="video_saved">Video saved</string>
+    <string name="no_gallery">No app found to open this file</string>
+    <string name="af_locked">Focus and exposure locked. Tap to unlock.</string>
+    <string name="cd_shutter">Shutter</string>
+    <string name="cd_flip">Switch camera</string>
+    <string name="cd_pause">Pause or resume recording</string>
+    <string name="cd_last">Open last photo or video</string>
+</resources>
