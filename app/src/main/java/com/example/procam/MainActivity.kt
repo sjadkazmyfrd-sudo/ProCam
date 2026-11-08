@@ -66,7 +66,7 @@ class MainActivity : AppCompatActivity() {
     private enum class Mode { PHOTO, VIDEO }
 
     private lateinit var binding: ActivityMainBinding
-    private val mainExecutor by lazy { ContextCompat.getMainExecutor(this) }
+    private val uiExecutor by lazy { ContextCompat.getMainExecutor(this) }
     private val ioExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
     // CameraX objects
@@ -212,8 +212,8 @@ class MainActivity : AppCompatActivity() {
                     null
                 }
                 bindCamera()
-            }, mainExecutor)
-        }, mainExecutor)
+            }, uiExecutor)
+        }, uiExecutor)
     }
 
     private fun bindCamera() {
@@ -565,7 +565,7 @@ class MainActivity : AppCompatActivity() {
 
         binding.shutter.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
         flashScreen()
-        capture.takePicture(options, mainExecutor, object : ImageCapture.OnImageSavedCallback {
+        capture.takePicture(options, uiExecutor, object : ImageCapture.OnImageSavedCallback {
             override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                 output.savedUri?.let { setLastCapture(it, video = false) }
             }
@@ -602,7 +602,7 @@ class MainActivity : AppCompatActivity() {
         if (has(Manifest.permission.RECORD_AUDIO)) pending = pending.withAudioEnabled()
 
         binding.shutter.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-        recording = pending.start(mainExecutor) { event -> handleRecordEvent(event) }
+        recording = pending.start(uiExecutor) { event -> handleRecordEvent(event) }
     }
 
     private fun handleRecordEvent(event: VideoRecordEvent) {
