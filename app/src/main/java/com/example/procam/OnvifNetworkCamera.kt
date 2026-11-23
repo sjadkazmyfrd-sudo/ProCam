@@ -3,6 +3,7 @@ package com.example.procam
 import android.content.Context
 import android.net.wifi.WifiManager
 import android.util.Log
+import android.util.Base64
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.net.DatagramPacket
@@ -21,9 +22,109 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import java.util.UUID
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+
+/** Shared ONVIF/RTSP Digest credentials and RFC 2617 MD5 authentication. */
+internal object ProCamCameraAuth {
+    const val USERNAME = "procam"
+    const val PASSWORD = "ProCam@2026"
+    private const val REALM = "ProCam Wireless Camera"
+    private const val NONCE_LIFETIME_MS = 5 * 60 * 1000L
+
+    private val random = SecureRandom()
+    private val nonceExpiry = ConcurrentHashMap<String, Long>()
+    private val highestNonceCount = ConcurrentHashMap<String, Long>()
+
+    fun challengeHeader(): String {
+        val now = System.currentTimeMillis()
+        for ((nonce, expiry) in nonceExpiry) {
+            if (expiry < now) {
+                nonceExpiry.remove(nonce, expiry)
+                highestNonceCount.keys.removeAll { it.contains(":$nonce:") }
+            }
+        }
+        val bytes = ByteArray(24)
+        random.nextBytes(bytes)
+        val nonce = Base64.encodeToString(bytes, Base64.NO_WRAP)
+        nonceExpiry[nonce] = now + NONCE_LIFETIME_MS
+        return "Digest realm=\"$REALM\", nonce=\"$nonce\", algorithm=MD5, qop=\"auth\""
+    }
+
+    /** Validates an Authorization: Digest header for HTTP or RTSP. */
+    fun verifyDigest(authorization: String?, method: String, requestUri: String): Boolean {
+        if (authorization.isNullOrBlank() || !authorization.startsWith("Digest ", ignoreCase = true)) return false
+        val fields = parseDigestFields(authorization.substringAfter(' '))
+        val username = fields["username"] ?: return false
+        val realm = fields["realm"] ?: return false
+        val nonce = fields["nonce"] ?: return false
+        val uri = fields["uri"] ?: return false
+        val response = fields["response"] ?: return false
+        if (username != USERNAME || realm != REALM || uri != requestUri) return false
+        if (nonceExpiry[nonce]?.let { it >= System.currentTimeMillis() } != true) return false
+
+        val algorithm = fields["algorithm"]?.uppercase(Locale.US) ?: "MD5"
+        if (algorithm != "MD5") return false
+        val ha1 = md5Hex("$USERNAME:$REALM:$PASSWORD")
+        val ha2 = md5Hex("$method:$uri")
+        val qop = fields["qop"]?.lowercase(Locale.US)
+        val expected = if (qop == null) {
+            md5Hex("$ha1:$nonce:$ha2")
+        } else {
+            if (qop != "auth") return false
+            val nonceCount = fields["nc"] ?: return false
+            val clientNonce = fields["cnonce"] ?: return false
+            if (!nonceCount.matches(Regex("[0-9a-fA-F]{8}"))) return false
+            md5Hex("$ha1:$nonce:$nonceCount:$clientNonce:$qop:$ha2")
+        }
+        if (!MessageDigest.isEqual(
+                expected.lowercase(Locale.US).toByteArray(StandardCharsets.US_ASCII),
+                response.lowercase(Locale.US).toByteArray(StandardCharsets.US_ASCII)
+            )) return false
+
+        // Reject repeated or decreasing nonce-count values for the same client nonce.
+        if (qop == "auth") {
+            val nonceCount = fields["nc"]!!.toLongOrNull(16) ?: return false
+            val replayKey = "$username:$nonce:${fields["cnonce"]}"
+            var accepted = false
+            highestNonceCount.compute(replayKey) { _, previous ->
+                if (previous == null || nonceCount > previous) {
+                    accepted = true
+                    nonceCount
+                } else previous
+            }
+            if (!accepted) return false
+        }
+        return true
+    }
+
+    private fun parseDigestFields(value: String): Map<String, String> {
+        val result = LinkedHashMap<String, String>()
+        val pattern = Regex("""([A-Za-z][A-Za-z0-9_-]*)\s*=\s*(?:"((?:\\.|[^"])*)"|([^,\s]+))""")
+        for (match in pattern.findAll(value)) {
+            val raw = match.groupValues[2].ifEmpty { match.groupValues[3] }
+            result[match.groupValues[1].lowercase(Locale.US)] = raw
+                .replace("\\\"", "\"")
+                .replace("\\\\", "\\")
+        }
+        return result
+    }
+
+    private fun md5Hex(value: String): String {
+        val digest = MessageDigest.getInstance("MD5").digest(value.toByteArray(StandardCharsets.UTF_8))
+        val chars = "0123456789abcdef"
+        val output = StringBuilder(digest.size * 2)
+        for (byte in digest) {
+            val unsigned = byte.toInt() and 0xff
+            output.append(chars[unsigned ushr 4]).append(chars[unsigned and 0x0f])
+        }
+        return output.toString()
+    }
+}
 
 /**
  * Small ONVIF Profile-S-style device service for Windows network-camera discovery.
@@ -142,6 +243,17 @@ internal class OnvifNetworkCamera(
             }
             val body = String(bodyBytes, 0, offset, StandardCharsets.UTF_8)
 
+            // Keep the clock query open so Windows can synchronize before generating
+            // Digest credentials. Protect the actual ONVIF device/media operations.
+            val isTimeQuery = body.contains("GetSystemDateAndTime")
+            val isOnvifRequest = path.contains("device_service") || path == "/onvif/device" ||
+                path.contains("media_service") || path == "/onvif/media"
+            if (isOnvifRequest && !isTimeQuery &&
+                !ProCamCameraAuth.verifyDigest(headers["authorization"], method, path)) {
+                writeUnauthorizedHttp(socket)
+                return
+            }
+
             val responseBody = when {
                 path.contains("device_service") || path == "/onvif/device" -> deviceSoapResponse(body)
                 path.contains("media_service") || path == "/onvif/media" -> mediaSoapResponse(body)
@@ -158,6 +270,20 @@ internal class OnvifNetworkCamera(
             Log.d(TAG, "ONVIF HTTP client closed", e)
         } finally {
             try { socket.close() } catch (_: Exception) {}
+        }
+    }
+
+    private fun writeUnauthorizedHttp(socket: Socket) {
+        val body = "Authentication required".toByteArray(StandardCharsets.UTF_8)
+        val header = "HTTP/1.1 401 Unauthorized\r\n" +
+            "WWW-Authenticate: ${ProCamCameraAuth.challengeHeader()}\r\n" +
+            "Content-Type: text/plain; charset=utf-8\r\n" +
+            "Content-Length: ${body.size}\r\n" +
+            "Connection: close\r\n\r\n"
+        socket.getOutputStream().apply {
+            write(header.toByteArray(StandardCharsets.US_ASCII))
+            write(body)
+            flush()
         }
     }
 

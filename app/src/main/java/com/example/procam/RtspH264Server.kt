@@ -99,6 +99,7 @@ internal class RtspH264Server(
                 val parts = requestLine.split(' ')
                 if (parts.size < 2) break
                 val method = parts[0].uppercase()
+                val requestUri = parts[1]
                 val headers = LinkedHashMap<String, String>()
                 while (true) {
                     val line = readLine(input) ?: break
@@ -108,6 +109,12 @@ internal class RtspH264Server(
                 }
                 val cseq = headers["cseq"] ?: "1"
                 val existingSession = headers["session"]?.substringBefore(';')
+                if (!ProCamCameraAuth.verifyDigest(headers["authorization"], method, requestUri)) {
+                    val challenge = "WWW-Authenticate: ${ProCamCameraAuth.challengeHeader()}\r\n"
+                    output.write(rtspResponse(cseq, "401 Unauthorized", challenge))
+                    output.flush()
+                    continue
+                }
                 val response = when (method) {
                     "OPTIONS" -> rtspResponse(cseq, "200 OK", "Public: OPTIONS, DESCRIBE, SETUP, PLAY, TEARDOWN, GET_PARAMETER\r\n")
                     "DESCRIBE" -> {
