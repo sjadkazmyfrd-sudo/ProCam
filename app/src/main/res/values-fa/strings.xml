@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ProCam</string>
+    <string name="tab_photo">عکس</string>
+    <string name="tab_video">فیلم</string>
+    <string name="permission_needed">برای استفاده از دوربین دسترسی لازم است. برای باز کردن تنظیمات اینجا را لمس کنید.</string>
+    <string name="fx_unavailable">این دوربین حالت ویژه (HDR / شب / پرتره) ندارد</string>
+    <string name="no_other_camera">دوربین دیگری موجود نیست</string>
+    <string name="camera_error">راه‌اندازی دوربین ممکن نشد</string>
+    <string name="photo_failed">ذخیره عکس ناموفق بود: %1$s</string>
+    <string name="video_failed">ضبط فیلم ناموفق بود (کد %1$d)</string>
+    <string name="video_saved">فیلم ذخیره شد</string>
+    <string name="no_gallery">برنامه‌ای برای باز کردن این فایل پیدا نشد</string>
+    <string name="af_locked">فوکوس و نور قفل شد. برای باز کردن قفل لمس کنید.</string>
+    <string name="cd_shutter">شاتر</string>
+    <string name="cd_flip">تعویض دوربین</string>
+    <string name="cd_pause">توقف یا ادامه ضبط</string>
+    <string name="cd_last">باز کردن آخرین عکس یا فیلم</string>
+</resources>
