@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="accent">#FFFFD60A</color>
+    <color name="rec_red">#FFFF3B30</color>
+    <color name="scrim">#66000000</color>
+</resources>
